@@ -1,7 +1,7 @@
 /* 晨读 · 检阅站外壳。无任何外部依赖。
  * enc 模式：PBKDF2-SHA256 → AES-256-GCM（WebCrypto），数据文件为 i/*.bin、d/*.bin。
  *   派生出的密钥以「不可导出」的 CryptoKey 存进 IndexedDB——不存密码本身。
- * plain 模式：本地工作视图（python -m http.server），数据文件为 i/*.json、d/*.html，带外审状态。
+ * plain 模式：本地工作视图（python -m http.server），数据文件为 i/*.json、d/*.html，带审读状态。
  */
 (() => {
   "use strict";
@@ -95,7 +95,7 @@
     ITEMS = shards.flat().sort((a, b) => (b.d + b.id).localeCompare(a.d + a.id));
     BYID = new Map(ITEMS.map((x) => [x.id, x]));
     $("#lock").hidden = true; $("#app").hidden = false;
-    $("#updated").textContent = `最后更新：${MAN.updated}` + (CFG.mode === "plain" ? " · 本地工作视图（含外审）" : "");
+    $("#updated").textContent = `最后更新：${MAN.updated}` + (CFG.mode === "plain" ? " · 本地工作视图（含审读状态）" : "");
     route();
   }
 
@@ -182,7 +182,7 @@
     $("#list").innerHTML = xs.slice(0, state.shown).map((x) => {
       const sub = x.k === "p" ? `${x.a} · ${x.dy} · ${x.th} · ${x.fm}` : `${x.a} · ${x.cat}`;
       const ttl = x.k === "p" ? x.t : `《${x.b}》${x.ch}`;
-      const rv = x.rv ? `<div class="rv">外审：${esc(x.rv)}</div>` : "";
+      const rv = x.rv ? `<div class="rv">审读：${esc(x.rv)}</div>` : "";
       return `<li><a href="#/r/${x.id}"><span class="dt">${fmtD(x.d)}<br>${x.d.slice(0, 4)}</span>
         <span><span class="tag ${x.k}">${kindName[x.k]}</span><span class="t">${hl(ttl)}</span><div class="s">${hl(sub)}</div>${snippet(x)}${rv}</span></a></li>`;
     }).join("");
