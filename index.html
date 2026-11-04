@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<title>晨读</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="lock" class="lock" hidden>
+  <form id="lockForm" class="lock-card" autocomplete="off">
+    <h1 class="brand">晨读</h1>
+    <p class="mut">每日古诗词 · 每日经典精读</p>
+    <input id="pw" type="password" placeholder="输入密码" autocomplete="current-password" required>
+    <label class="remember"><input id="remember" type="checkbox" checked> 在这台设备上记住</label>
+    <button id="unlockBtn" type="submit">进入</button>
+    <p id="lockMsg" class="msg" role="status"></p>
+  </form>
+</div>
+
+<div id="app" hidden>
+  <header class="top">
+    <a href="#/" class="brand">晨读</a>
+    <nav>
+      <a href="#/" data-nav="home">首页</a>
+      <a href="#/shelf" data-nav="shelf">书架</a>
+      <a href="#/poets" data-nav="poets">诗人</a>
+    </nav>
+  </header>
+  <main id="view"></main>
+  <footer class="foot">
+    <span id="updated"></span>
+    <button id="forget" class="link">在此设备上退出</button>
+  </footer>
+</div>
+
+<div id="reader" class="reader" hidden>
+  <div class="rbar">
+    <button id="rBack" aria-label="返回">‹ 返回</button>
+    <span id="rTitle" class="rtitle"></span>
+    <button id="rPrev" aria-label="上一篇">上一篇</button>
+    <button id="rNext" aria-label="下一篇">下一篇</button>
+    <button id="rShare" aria-label="复制链接">链接</button>
+  </div>
+  <iframe id="rFrame" title="正文" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe>
+</div>
+<div id="toast" class="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
