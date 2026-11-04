@@ -25,6 +25,8 @@
   async function kvDel(k) { try { const d = await idb(); await new Promise((res) => { const t = d.transaction(STORE, "readwrite"); t.objectStore(STORE).delete(k); t.oncomplete = res; t.onerror = res; }); } catch {} }
 
   // ───────── 解密 ─────────
+  // 解密失败（密码错 / 密文被换）是 OperationError；断网是 TypeError「Failed to fetch」；HTTP 错误我们自己抛
+  const isBadKey = (e) => e && (e.name === "OperationError" || e.message === "格式不对");
   const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
   async function deriveKey(pw) {
     const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveKey"]);
@@ -66,7 +68,12 @@
     const saved = await kvGet("key:" + CFG.salt);
     if (saved) {
       KEY = saved;
-      try { return await enter(); } catch { KEY = null; await kvDel("key:" + CFG.salt); }
+      try { return await enter(); }
+      catch (e) {
+        KEY = null;
+        if (isBadKey(e)) await kvDel("key:" + CFG.salt);          // 换过密码 → 存的钥匙作废
+        else return showLock("网络不通，刷新重试（这台设备已记住，不用重输密码）");
+      }
     }
     showLock("");
   }
@@ -81,7 +88,7 @@
       $("#pw").value = "";
       await enter();
     } catch (err) {
-      KEY = null; $("#lockMsg").textContent = String(err).includes("HTTP") ? "网络错误，稍后再试" : "密码不对";
+      KEY = null; $("#lockMsg").textContent = isBadKey(err) ? "密码不对" : "网络错误，稍后再试";
     } finally { btn.disabled = false; }
   });
   $("#forget").addEventListener("click", async () => {
@@ -91,7 +98,7 @@
 
   async function enter() {
     MAN = JSON.parse(await load("i", "m", true));
-    const shards = await Promise.all(MAN.shards.map((s) => load("i", s, false).then(JSON.parse)));
+    const shards = await Promise.all(MAN.shards.map((s) => load("i", s, true).then(JSON.parse)));
     ITEMS = shards.flat().sort((a, b) => (b.d + b.id).localeCompare(a.d + a.id));
     BYID = new Map(ITEMS.map((x) => [x.id, x]));
     $("#lock").hidden = true; $("#app").hidden = false;
@@ -111,6 +118,7 @@
     closeReader();
     if (wasReading && rendered === (page || "home")) return;     // 从阅读器回来：保留列表与滚动位置
     rendered = page || "home";
+    window.scrollTo(0, 0);
     if (page === "shelf") return renderShelf();
     if (page === "poets") return renderPoets();
     renderHome();
@@ -119,11 +127,12 @@
   // ───────── 首页 ─────────
   const kindName = { p: "古诗", c: "经典" };
   const fmtD = (d) => d.slice(5).replace("-", "·");
-  function todayStr() { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; }
+  function dayStr(off = 0) { const t = new Date(); t.setDate(t.getDate() + off); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; }
+  const todayStr = () => dayStr(0);
   function latest(k) { return ITEMS.find((x) => x.k === k); }
   function card(x) {
     if (!x) return `<div class="card"><div class="kind">暂无</div></div>`;
-    const stale = x.d !== todayStr() ? `<div class="stale">今天还没更新 · 这是 ${fmtD(x.d)} 的</div>` : "";
+    const stale = x.d < dayStr(-1) ? `<div class="stale">最近一篇是 ${fmtD(x.d)} 的，之后还没更新</div>` : "";
     if (x.k === "p") {
       const verse = (x.poem || "").split("\n").slice(0, 4).join("\n");
       return `<a class="card p" href="#/r/${x.id}"><div class="kind">古诗 · ${esc(x.d)}</div>
@@ -170,14 +179,20 @@
     const q = state.q.toLowerCase();
     return pool().filter((x) => Object.entries(state.f).every(([k, v]) => !v || (x[k] || UNK) === v) && (!q || hay(x).toLowerCase().includes(q)));
   }
-  function hl(s) { s = esc(s); if (!state.q) return s; const q = esc(state.q).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); return s.replace(new RegExp(q, "gi"), (m) => `<mark>${m}</mark>`); }
+  function hl(s) {
+    s = String(s ?? ""); if (!state.q) return esc(s);
+    const re = new RegExp(state.q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    let out = "", i = 0;
+    for (const m of s.matchAll(re)) { out += esc(s.slice(i, m.index)) + `<mark>${esc(m[0])}</mark>`; i = m.index + m[0].length; }
+    return out + esc(s.slice(i));
+  }
   function snippet(x) {
     if (!state.q || !x.poem) return "";
     const line = x.poem.split("\n").find((l) => l.toLowerCase().includes(state.q.toLowerCase()));
     return line ? `<div class="s">${hl(line)}</div>` : "";
   }
   function renderList() {
-    const xs = filtered(); window.__LIST = xs.map((x) => x.id);
+    const xs = filtered();
     $("#count").textContent = `${xs.length} 篇`;
     $("#list").innerHTML = xs.slice(0, state.shown).map((x) => {
       const sub = x.k === "p" ? `${x.a} · ${x.dy} · ${x.th} · ${x.fm}` : `${x.a} · ${x.cat}`;
@@ -194,7 +209,7 @@
     const cnt = new Map(); ITEMS.forEach((x) => cnt.set(x.d, (cnt.get(x.d) || 0) + 1));
     const dates = ITEMS.map((x) => x.d).sort(); if (!dates.length) return;
     const start = new Date(dates[0] + "T00:00:00"); start.setDate(start.getDate() - start.getDay());
-    const end = new Date(todayStr() + "T00:00:00");
+    const last = dates[dates.length - 1], end = new Date((last > todayStr() ? last : todayStr()) + "T00:00:00");
     const cs = 12, gap = 2, cells = []; let col = 0; const months = [];
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -204,6 +219,7 @@
       if (row === 6) col++;
     }
     const w = (col + 1) * (cs + gap), h = 16 + 7 * (cs + gap);
+    if (!months.length || months[0][0] >= 3) months.unshift([0, new Date(dates[0] + "T00:00:00").getMonth() + 1]);
     const ml = months.map(([c, m]) => `<text x="${c * (cs + gap)}" y="11" font-size="10" fill="var(--mut)">${m}月</text>`).join("");
     $("#heat").innerHTML = `<svg width="${w}" height="${h}" role="img" aria-label="每日发布日历">${ml}${cells.join("")}</svg>`;
     $("#legend").innerHTML = `少 <i style="background:var(--h0)"></i><i style="background:var(--h1)"></i><i style="background:var(--h2)"></i><i style="background:var(--h3)"></i> 多 · 断更的日子留白`;
@@ -223,10 +239,19 @@
 
   // ───────── 阅读器 ─────────
   let curId = null;
+  // srcdoc 文档的基准 URL 是外层页面：正文里的 <a href="#mind"> 会把 iframe 导航到「站点首页#mind」，正文就没了。
+  // 所以给每篇注入一小段脚本：页内锚点改为就地滚动，其余链接一律新窗口打开。
+  const FRAME_JS = `<script>document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a[href]");if(!a)return;var h=a.getAttribute("href");if(h.charAt(0)==="#"){e.preventDefault();var id=decodeURIComponent(h.slice(1)),t=id&&(document.getElementById(id)||document.getElementsByName(id)[0]);if(t)t.scrollIntoView({behavior:"smooth",block:"start"});else if(!id)window.scrollTo({top:0,behavior:"smooth"});}else{a.target="_blank";a.rel="noopener noreferrer";}},true);<\/script>`;
+  function frame(html) {          // 每次换一个新 iframe：同一个 iframe 隐藏再显示后，有的浏览器不再重绘
+    const old = $("#rFrame"), n = old.cloneNode(false);
+    n.removeAttribute("srcdoc");      // 克隆会带上旧 srcdoc
+    if (html) n.srcdoc = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + FRAME_JS) : FRAME_JS + html;
+    old.replaceWith(n);
+  }
   async function openReader(id) {
     const x = BYID.get(id);
     $("#reader").hidden = false; document.body.style.overflow = "hidden";
-    if (!x) { $("#rTitle").textContent = "找不到这一篇"; $("#rFrame").srcdoc = ""; return; }
+    if (!x) { $("#rTitle").textContent = "找不到这一篇"; $("#rPrev").disabled = $("#rNext").disabled = true; frame(""); return; }
     curId = id;
     $("#rTitle").textContent = x.k === "p" ? x.t : `《${x.b}》`;
     const seq = ITEMS.filter((y) => y.k === x.k), i = seq.findIndex((y) => y.id === id);
@@ -234,16 +259,17 @@
     $("#rPrev").disabled = !prev; $("#rNext").disabled = !next;
     $("#rPrev").onclick = () => prev && location.replace(`#/r/${prev.id}`);
     $("#rNext").onclick = () => next && location.replace(`#/r/${next.id}`);
-    $("#rFrame").srcdoc = `<p style="font:15px sans-serif;color:#888;padding:24px">加载中…</p>`;
-    if (!x.has) { $("#rFrame").srcdoc = `<p style="font:15px sans-serif;padding:24px">这一篇的详情页本次没有发布（构建时没通过检查）。</p>`; return; }
+    frame(`<p style="font:15px sans-serif;color:#888;padding:24px">加载中…</p>`);
+    if (!x.has) { frame(`<p style="font:15px sans-serif;padding:24px">这一篇的详情页本次没有发布（构建时没通过检查）。</p>`); return; }
     try {
-      const html = await load("d", id, false);
-      if (curId === id) $("#rFrame").srcdoc = html;
-    } catch (e) { $("#rFrame").srcdoc = `<p style="font:15px sans-serif;padding:24px">加载失败：${esc(e.message)}</p>`; }
+      const html = await load("d", id, true);
+      if (curId === id) frame(html);
+    } catch (e) { if (curId === id) frame(`<p style="font:15px sans-serif;padding:24px">${isBadKey(e) ? "解不开这一篇（可能刚换过密码，请退出后重新输入）" : "加载失败，检查网络后重试"}</p>`); }
   }
-  function closeReader() { $("#reader").hidden = true; document.body.style.overflow = ""; curId = null; $("#rFrame").srcdoc = ""; }
+  function closeReader() { $("#reader").hidden = true; document.body.style.overflow = ""; curId = null; frame(""); }
   $("#rBack").addEventListener("click", () => { if (inApp) history.back(); else location.hash = "#/"; });
   window.addEventListener("hashchange", (e) => { if (!/#\/r\//.test(e.oldURL)) inApp = true; });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#reader").hidden) $("#rBack").click(); });
   $("#rShare").addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(location.href); toast("链接已复制（打开仍需密码）"); } catch { toast(location.href); }
   });
