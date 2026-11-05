@@ -241,11 +241,21 @@
   let curId = null;
   // srcdoc 文档的基准 URL 是外层页面：正文里的 <a href="#mind"> 会把 iframe 导航到「站点首页#mind」，正文就没了。
   // 所以给每篇注入一小段脚本：页内锚点改为就地滚动，其余链接一律新窗口打开。
-  const FRAME_JS = `<script>document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a[href]");if(!a)return;var h=a.getAttribute("href");if(h.charAt(0)==="#"){e.preventDefault();var id=decodeURIComponent(h.slice(1)),t=id&&(document.getElementById(id)||document.getElementsByName(id)[0]);if(t)t.scrollIntoView({behavior:"smooth",block:"start"});else if(!id)window.scrollTo({top:0,behavior:"smooth"});}else{a.target="_blank";a.rel="noopener noreferrer";}},true);<\/script>`;
+  // Esc 键在正文里按下时，事件只到 iframe：转告外层关掉阅读器。
+  const FRAME_JS = `<script>(function(){`
+    + `document.addEventListener("click",function(e){var a=e.target.closest&&e.target.closest("a[href]");if(!a)return;`
+    + `var h=a.getAttribute("href").trim();`
+    + `if(h===""||h.charAt(0)==="#"){e.preventDefault();var id=h.slice(1);try{id=decodeURIComponent(id)}catch(_){}`
+    + `var t=id&&(document.getElementById(id)||document.getElementsByName(id)[0]);`
+    + `if(t)t.scrollIntoView({behavior:"smooth",block:"start"});else if(!id)window.scrollTo({top:0,behavior:"smooth"});}`
+    + `else{a.target="_blank";a.rel="noopener noreferrer";}},true);`
+    + `document.addEventListener("keydown",function(e){if(e.key==="Escape")parent.postMessage("chendu:esc","*");});`
+    + `})();<\/script>`;
   function frame(html) {          // 每次换一个新 iframe：同一个 iframe 隐藏再显示后，有的浏览器不再重绘
     const old = $("#rFrame"), n = old.cloneNode(false);
     n.removeAttribute("srcdoc");      // 克隆会带上旧 srcdoc
-    if (html) n.srcdoc = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, (m) => m + FRAME_JS) : FRAME_JS + html;
+    const HEAD = /<head(\s[^>]*)?>/i;   // 不能写成 <head[^>]*>：会误中 <header>
+    if (html) n.srcdoc = HEAD.test(html) ? html.replace(HEAD, (m) => m + FRAME_JS) : FRAME_JS + html;
     old.replaceWith(n);
   }
   async function openReader(id) {
@@ -269,7 +279,9 @@
   function closeReader() { $("#reader").hidden = true; document.body.style.overflow = ""; curId = null; frame(""); }
   $("#rBack").addEventListener("click", () => { if (inApp) history.back(); else location.hash = "#/"; });
   window.addEventListener("hashchange", (e) => { if (!/#\/r\//.test(e.oldURL)) inApp = true; });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#reader").hidden) $("#rBack").click(); });
+  const escClose = () => { if (!$("#reader").hidden) $("#rBack").click(); };
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") escClose(); });
+  window.addEventListener("message", (e) => { if (e.data === "chendu:esc" && e.source === $("#rFrame").contentWindow) escClose(); });
   $("#rShare").addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(location.href); toast("链接已复制（打开仍需密码）"); } catch { toast(location.href); }
   });
