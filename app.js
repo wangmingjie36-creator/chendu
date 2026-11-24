@@ -11,6 +11,32 @@
   let CFG, KEY = null, MAN, ITEMS = [], BYID = new Map(), rendered = null, inApp = false;
   const state = { tab: "all", q: "", f: {}, shown: 60 };
 
+  // ───────── 配色：默认跟随系统；手动选的记在本机（localStorage），与密钥无关 ─────────
+  const TKEY = "chendu-theme", ROOT = document.documentElement, mqDark = matchMedia("(prefers-color-scheme:dark)");
+  const sysTheme = () => (mqDark.matches ? "dark" : "light");
+  const themeNow = () => ROOT.dataset.theme || sysTheme();
+  function paintTheme() {
+    const to = themeNow() === "dark" ? "浅色" : "深色";
+    document.querySelectorAll("[data-theme-btn]").forEach((b) => { b.textContent = to; b.setAttribute("aria-label", `切换到${to}`); });
+  }
+  function toggleTheme() {
+    const next = themeNow() === "dark" ? "light" : "dark";
+    if (next === sysTheme()) { delete ROOT.dataset.theme; try { localStorage.removeItem(TKEY); } catch {} }   // 选回系统那一套 = 恢复跟随系统
+    else { ROOT.dataset.theme = next; try { localStorage.setItem(TKEY, next); } catch {} }
+    paintTheme();
+  }
+  try { const t = localStorage.getItem(TKEY); if (t === "light" || t === "dark") ROOT.dataset.theme = t; } catch {}
+  paintTheme();
+  mqDark.addEventListener("change", paintTheme);
+  document.addEventListener("click", (e) => { if (e.target.closest && e.target.closest("[data-theme-btn]")) toggleTheme(); });
+  // 正文页是独立文档（iframe），自带一套跟随系统的配色（lib/render.py 的 PAGE_CSS，色值须与之一致）。
+  // 手动选了配色时注入一段覆盖；:root:root 的优先级高于正文自己的 :root。
+  const PAGE_THEME = {
+    light: "--bg:#faf7f0;--fg:#2a2622;--mut:#7a7066;--line:#e3dccf;--acc:#9b2c1f;--card:#fffdf8",
+    dark: "--bg:#171513;--fg:#e8e2d8;--mut:#9a9085;--line:#33302b;--acc:#e07a5f;--card:#1f1c19",
+  };
+  const frameTheme = () => { const t = ROOT.dataset.theme; return PAGE_THEME[t] ? `<style>:root:root{color-scheme:${t};${PAGE_THEME[t]}}</style>` : ""; };
+
   // ───────── 存储：IndexedDB 里放不可导出的 CryptoKey ─────────
   const DB = "chendu", STORE = "k";
   function idb() {
@@ -255,7 +281,8 @@
     const old = $("#rFrame"), n = old.cloneNode(false);
     n.removeAttribute("srcdoc");      // 克隆会带上旧 srcdoc
     const HEAD = /<head(\s[^>]*)?>/i;   // 不能写成 <head[^>]*>：会误中 <header>
-    if (html) n.srcdoc = HEAD.test(html) ? html.replace(HEAD, (m) => m + FRAME_JS) : FRAME_JS + html;
+    const inj = frameTheme() + FRAME_JS;
+    if (html) n.srcdoc = HEAD.test(html) ? html.replace(HEAD, (m) => m + inj) : inj + html;
     old.replaceWith(n);
   }
   async function openReader(id) {

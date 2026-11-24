@@ -5,9 +5,14 @@
   --serif:"Songti SC","STSong","Noto Serif CJK SC","Source Han Serif SC","Noto Serif SC",serif;
   --sans:-apple-system,"PingFang SC","Hiragino Sans GB","Noto Sans CJK SC","Microsoft YaHei",sans-serif;
 }
+/* 配色默认跟随系统；手动选择由 app.js 写到 <html data-theme>，优先于系统。两处深色值须保持一致 */
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){
   --bg:#131211;--paper:#1a1918;--fg:#e9e5dc;--mut:#9a948a;--line:#34312d;--rule:#e9e5dc;--acc:#e0735f;
   --h0:#24221f;--h1:#4a4640;--h2:#8d877d;--h3:#e9e5dc;}}
+:root[data-theme=dark]{
+  --bg:#131211;--paper:#1a1918;--fg:#e9e5dc;--mut:#9a948a;--line:#34312d;--rule:#e9e5dc;--acc:#e0735f;
+  --h0:#24221f;--h1:#4a4640;--h2:#8d877d;--h3:#e9e5dc;}
+:root{color-scheme:light dark}:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.75 var(--serif)}
@@ -29,6 +34,9 @@ button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
 .lock-card button{margin-top:22px;width:100%;padding:12px;background:var(--fg);color:var(--bg);font:600 16px var(--sans);letter-spacing:.4em}
 .lock-card button:disabled{opacity:.5}
 .msg{min-height:1.5em;color:var(--acc);font:14px var(--sans)}
+/* 配色切换：锁屏下方一枚、顶栏一枚 */
+.lock-card button.theme{margin-top:6px;width:auto;padding:6px 10px;background:none;color:var(--mut);font:13px var(--sans);letter-spacing:.1em;text-decoration:underline}
+.top nav button.theme{color:var(--mut);font:14px var(--sans);padding:0}
 
 /* 顶栏（吸顶的小报头） */
 .top{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:12px;
